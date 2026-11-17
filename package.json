@@ -1,0 +1,20 @@
+{
+  "name": "hearing-annotations-poc",
+  "version": "0.1.0",
+  "description": "Hearing preparation PoC: annotate, navigate, project and work offline on PDF case files with Nutrient Web SDK",
+  "scripts": {
+    "postinstall": "node scripts/copy-sdk.mjs",
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "license": "UNLICENSED",
+  "dependencies": {
+    "@nutrient-sdk/viewer": "^1.25.0"
+  },
+  "devDependencies": {
+    "vite": "^5.4.10"
+  },
+  "private": true,
+  "type": "module"
+}

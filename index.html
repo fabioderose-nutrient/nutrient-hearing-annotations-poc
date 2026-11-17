@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Hearing Annotations PoC</title>
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="title-block">
+        <div class="logo" aria-hidden="true">⚖</div>
+        <div class="title-text">
+          <div class="app-title" data-i18n="appTitle"></div>
+          <div class="doc-title" id="doc-title"></div>
+        </div>
+      </div>
+      <div class="topbar-actions">
+        <button id="offline-btn" class="btn btn-ghost" data-tip-key="offlineTip">
+          <span class="dot" id="offline-dot"></span>
+          <span id="offline-label" class="btn-label" data-i18n="makeOffline"></span>
+        </button>
+        <button id="projection-btn" class="btn btn-primary" data-tip-key="projectionTip">
+          <span aria-hidden="true">⛶</span> <span class="btn-label" data-i18n="projectionOn"></span>
+        </button>
+        <button id="panel-toggle" class="btn btn-icon" data-tip-key="panelTip" aria-label="panel">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <main class="layout">
+      <div id="viewer" class="viewer"></div>
+      <div id="scrim" class="scrim"></div>
+
+      <aside id="sidebar" class="sidebar">
+        <div id="resize-handle" class="resize-handle" data-tip-key="resizeTip"></div>
+
+        <section class="composer">
+          <div class="composer-row">
+            <div class="composer-label" data-i18n="iAm"></div>
+            <div id="persona-picker" class="picker"></div>
+          </div>
+          <div class="composer-row">
+            <div class="composer-label" data-i18n="newHighlightsIn"></div>
+            <div id="category-picker" class="picker"></div>
+          </div>
+          <p class="hint" data-i18n="howToHighlight"></p>
+        </section>
+
+        <nav class="tabs" role="tablist">
+          <button class="tab active" data-tab="annotations" role="tab">
+            <span data-i18n="tabAnnotations"></span> <span class="badge" id="count-badge">0</span>
+          </button>
+          <button class="tab" data-tab="settings" role="tab" data-i18n="tabSettings"></button>
+        </nav>
+
+        <section id="tab-annotations" class="tab-panel">
+          <div class="filters">
+            <input id="search" class="input" type="search" data-i18n-placeholder="searchPlaceholder" />
+            <div class="segmented" id="group-switch">
+              <button data-group="category" class="active" data-i18n="byCategory"></button>
+              <button data-group="persona" data-i18n="byPersona"></button>
+              <button data-group="page" data-i18n="byPage"></button>
+            </div>
+            <div class="tree-tools">
+              <button class="link-btn" id="show-all" data-i18n="showAll"></button>
+              <button class="link-btn" id="hide-all" data-i18n="hideAll"></button>
+              <span class="spacer"></span>
+              <button class="link-btn" id="expand-all" data-i18n="expandAll"></button>
+              <button class="link-btn" id="collapse-all" data-i18n="collapseAll"></button>
+            </div>
+          </div>
+          <div id="tree" class="tree"></div>
+        </section>
+
+        <section id="tab-settings" class="tab-panel hidden">
+          <div class="settings-block">
+            <div class="settings-head">
+              <h3 data-i18n="personas"></h3>
+              <button id="add-persona" class="btn btn-small" data-i18n="addPersona"></button>
+            </div>
+            <p class="hint" data-i18n="personasHint"></p>
+            <ul id="persona-list" class="settings-list"></ul>
+          </div>
+          <div class="settings-block">
+            <div class="settings-head">
+              <h3 data-i18n="categories"></h3>
+              <button id="add-category" class="btn btn-small" data-i18n="addCategory"></button>
+            </div>
+            <p class="hint" data-i18n="categoriesHint"></p>
+            <ul id="category-list" class="settings-list"></ul>
+          </div>
+          <div class="settings-block">
+            <button id="reset-demo" class="btn btn-small btn-danger-ghost" data-i18n="resetDemo"></button>
+          </div>
+        </section>
+      </aside>
+    </main>
+
+    <!-- Projection setup -->
+    <div id="projection-dialog" class="modal hidden" role="dialog" aria-modal="true">
+      <div class="modal-card">
+        <h2 data-i18n="projectionTitle"></h2>
+        <p class="hint" data-i18n="projectionIntro"></p>
+        <fieldset class="option-group">
+          <legend data-i18n="projectAnnotations"></legend>
+          <label class="option"><input type="radio" name="proj-mode" value="none" />
+            <span><strong data-i18n="projNone"></strong><small data-i18n="projNoneHint"></small></span></label>
+          <label class="option"><input type="radio" name="proj-mode" value="tree" />
+            <span><strong id="proj-tree-label"></strong><small data-i18n="projTreeHint"></small></span></label>
+          <label class="option"><input type="radio" name="proj-mode" value="all" />
+            <span><strong id="proj-all-label"></strong><small data-i18n="projAllHint"></small></span></label>
+        </fieldset>
+        <fieldset class="option-group">
+          <legend data-i18n="projectAlso"></legend>
+          <label class="option switch"><input type="checkbox" id="proj-notes" />
+            <span><strong data-i18n="projNotes"></strong><small data-i18n="projNotesHint"></small></span></label>
+          <label class="option switch"><input type="checkbox" id="proj-toolbar" />
+            <span><strong data-i18n="projToolbar"></strong><small data-i18n="projToolbarHint"></small></span></label>
+        </fieldset>
+        <div class="modal-actions">
+          <button id="proj-cancel" class="btn" data-i18n="cancel"></button>
+          <button id="proj-start" class="btn btn-primary"></button>
+        </div>
+      </div>
+    </div>
+
+    <div id="projection-banner" class="projection-banner hidden">
+      <span id="projection-status"></span>
+      <button id="projection-edit" class="btn btn-small btn-ghost-dark" data-i18n="projectionEdit"></button>
+      <button id="projection-exit" class="btn btn-primary btn-small" data-i18n="projectionOff"></button>
+    </div>
+    <div id="tooltip" class="tooltip hidden" role="tooltip"></div>
+    <div id="toast" class="toast hidden"></div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
