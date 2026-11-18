@@ -68,6 +68,8 @@ button { font: inherit; color: inherit; }
 .dot { width: 9px; height: 9px; border-radius: 50%; background: #adb5bd; flex: none; }
 .dot-ready { background: #2f9e44; box-shadow: 0 0 0 3px #d3f9d8; }
 .dot-off { background: #e8590c; box-shadow: 0 0 0 3px #ffe8cc; }
+.dot-busy { background: #1971c2; box-shadow: 0 0 0 3px #d0ebff; animation: pulse 1s ease-in-out infinite alternate; }
+@keyframes pulse { to { opacity: .35; } }
 
 /* ---------- Layout and panel ---------- */
 .layout { flex: 1; display: flex; min-height: 0; position: relative; }

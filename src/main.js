@@ -1,5 +1,5 @@
 import NutrientViewer from "@nutrient-sdk/viewer";
-import { t, applyStaticStrings } from "./i18n.js";
+import { t, lang, applyStaticStrings } from "./i18n.js";
 import { DEFAULT_PERSONAS, DEFAULT_CATEGORIES, DOCUMENTS, DEFAULT_DOC, SEED_ANNOTATIONS } from "./config.js";
 import { loadInstantJson, saveInstantJson, clearAll, loadSettings, saveSettings } from "./store.js";
 import { initTooltips } from "./tooltip.js";
@@ -681,20 +681,122 @@ async function goToAnnotation(id, { updateHash = true } = {}) {
 }
 
 // Deep link format: /?doc=<docId>#a=<annotationId>
-async function openFromHash() {
-  const match = location.hash.match(/^#a=(.+)$/);
-  if (match) await goToAnnotation(decodeURIComponent(match[1]), { updateHash: false });
+// ---------- Sharing ----------
+// Annotations live in each browser, so a share link carries them: the annotations (Instant JSON objects),
+// plus the themes and personas they use, compressed in the URL hash. The hash never reaches the server.
+// Format: /?doc=<docId>#a=<annotationId>&s=<payload>  (a: annotation to open, s: shared annotations)
+const toBase64Url = (bytes) => {
+  let bin = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+};
+const fromBase64Url = (text) => Uint8Array.from(atob(text.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));
+const pipe = async (bytes, stream) => new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(stream)).arrayBuffer());
+
+async function encodeShare(annotations) {
+  const themeIds = new Set(annotations.map((a) => a.customData?.categoryId));
+  const personaIds = new Set(annotations.map((a) => a.customData?.personaId));
+  const payload = {
+    v: 1,
+    themes: state.categories.filter((c) => themeIds.has(c.id)),
+    personas: state.personas.filter((p) => personaIds.has(p.id)),
+    annotations: annotations.map((a) => {
+      const json = NutrientViewer.Annotations.toSerializableObject(a);
+      delete json.pdfObjectId;
+      return json;
+    }),
+  };
+  const bytes = new TextEncoder().encode(JSON.stringify(payload));
+  return toBase64Url(await pipe(bytes, new CompressionStream("deflate-raw")));
 }
 
-async function copyLink(id) {
-  const url = `${location.origin}${location.pathname}?doc=${docId}#a=${encodeURIComponent(id)}`;
+async function decodeShare(text) {
+  const bytes = await pipe(fromBase64Url(text), new DecompressionStream("deflate-raw"));
+  return JSON.parse(new TextDecoder().decode(bytes));
+}
+
+// Adds the shared annotations to this browser (updating the ones that already exist) and keeps them.
+async function importShare(payload) {
+  const { instance } = state;
+  let settingsChanged = false;
+  for (const theme of payload.themes || []) {
+    if (!category(theme.id)) {
+      state.categories.push(theme);
+      settingsChanged = true;
+    }
+  }
+  for (const p of payload.personas || []) {
+    if (!persona(p.id)) {
+      state.personas.push(p);
+      settingsChanged = true;
+    }
+  }
+  if (settingsChanged) {
+    await persistSettings();
+    renderSettings();
+    renderPickers();
+  }
+  const existing = new Map((await getAllAnnotations()).map((a) => [a.id, a]));
+  const toCreate = [];
+  const toUpdate = [];
+  for (const json of payload.annotations || []) {
+    // Keep the sender's id: the link points to it, and a second import updates instead of duplicating.
+    const shared = NutrientViewer.Annotations.fromSerializableObject(json).set("id", json.id);
+    (existing.has(shared.id) ? toUpdate : toCreate).push(shared);
+  }
+  if (toCreate.length) await instance.create(toCreate);
+  if (toUpdate.length) await instance.update(toUpdate);
+  await saveInstantJson(docId, await instance.exportInstantJSON());
+  await refreshAnnotations();
+  return toCreate.length + toUpdate.length;
+}
+
+async function openFromHash() {
+  const params = new URLSearchParams(location.hash.slice(1));
+  const shared = params.get("s");
+  if (shared) {
+    try {
+      const n = await importShare(await decodeShare(shared));
+      toast(t.sharedImported.replace("{n}", n));
+    } catch (err) {
+      console.error(err);
+      toast(t.sharedInvalid);
+    }
+    // Keep only the annotation id in the address bar once the shared annotations are stored.
+    params.delete("s");
+    history.replaceState(null, "", `${location.pathname}${location.search}${params.toString() ? "#" + params : ""}`);
+  }
+  const id = params.get("a");
+  if (id) await goToAnnotation(id, { updateHash: false });
+}
+
+// The language is part of the link: each language has its own demo case file.
+const shareUrl = (hash) => `${location.origin}${location.pathname}?lang=${lang}&doc=${docId}${hash ? "#" + hash : ""}`;
+
+async function copyToClipboard(url, message) {
   try {
     await navigator.clipboard.writeText(url);
-    toast(t.linkCopied);
+    toast(message);
   } catch {
     prompt(t.copyLink, url);
   }
 }
+
+// One annotation: the link opens the case file on it, for anyone.
+async function copyLink(id) {
+  const annotation = (await getAllAnnotations()).find((a) => a.id === id);
+  if (!annotation) return;
+  const payload = await encodeShare([annotation]);
+  await copyToClipboard(shareUrl(`a=${encodeURIComponent(id)}&s=${payload}`), t.linkCopied);
+}
+
+// The whole case file with all its annotations.
+$("share-btn").addEventListener("click", async () => {
+  if (!state.instance) return;
+  const all = await getAllAnnotations();
+  const payload = all.length ? await encodeShare(all) : "";
+  await copyToClipboard(shareUrl(payload ? `s=${payload}` : ""), t.shareCopied.replace("{n}", all.length));
+});
 
 // ---------- Projection ----------
 // The dialog chooses what the courtroom sees: no highlights, the ones ticked in the tree, or all of them,
@@ -788,15 +890,96 @@ document.addEventListener("keydown", (e) => {
 });
 
 // ---------- Offline ----------
-function renderOfflineState(ready) {
+// "Prepare offline" downloads every file listed in /offline-manifest.json (written at build time) into the
+// service worker cache. The app is ready offline only when the cached manifest matches the deployed one.
+const OFFLINE_CACHE = "hearing-annotations-v3";
+const OFFLINE_FLAG = "offline.version";
+let offlineBusy = false;
+
+function renderOfflineState(ready, progress = null) {
   const online = navigator.onLine;
-  $("offline-dot").className = `dot ${!online ? "dot-off" : ready ? "dot-ready" : ""}`;
-  $("offline-label").textContent = !online ? t.offlineNow : ready ? t.offlineReady : t.makeOffline;
+  $("offline-dot").className = `dot ${!online ? "dot-off" : ready ? "dot-ready" : progress != null ? "dot-busy" : ""}`;
+  $("offline-label").textContent =
+    progress != null ? t.offlineProgress.replace("{p}", progress) : !online ? t.offlineNow : ready ? t.offlineReady : t.makeOffline;
 }
+
+async function fetchManifest() {
+  try {
+    const res = await fetch("/offline-manifest.json", { cache: "no-store" });
+    if (res.ok) return await res.json();
+  } catch {
+    /* offline: fall back to the cached copy */
+  }
+  const cached = "caches" in window ? await caches.match("/offline-manifest.json") : null;
+  return cached ? cached.json() : null;
+}
+
 async function isOfflineReady() {
   if (!("caches" in window) || !navigator.serviceWorker?.controller) return false;
-  return !!(await caches.match(doc.url));
+  const manifest = await fetchManifest();
+  let flag = null;
+  try {
+    flag = localStorage.getItem(OFFLINE_FLAG);
+  } catch {
+    /* storage blocked */
+  }
+  return !!manifest && flag === manifest.version && !!(await caches.match(doc.url));
 }
+
+async function prepareOffline({ silent = false } = {}) {
+  if (offlineBusy) return;
+  const reg = await registerServiceWorker();
+  if (!reg) return silent ? null : toast(t.noOfflineSupport);
+  offlineBusy = true;
+  try {
+    await navigator.serviceWorker.ready;
+    const res = await fetch("/offline-manifest.json", { cache: "no-store" });
+    if (!res.ok) throw new Error("offline-manifest.json not found");
+    const manifest = await res.json();
+    const cache = await caches.open(OFFLINE_CACHE);
+    const files = [...manifest.files, "/offline-manifest.json"];
+    const missing = [];
+    for (const path of files) {
+      // The page, the case files and the manifest are refreshed every time; versioned files only when missing.
+      const always = path === "/" || path.startsWith("/samples/") || path === "/offline-manifest.json";
+      if (always || !(await cache.match(path))) missing.push(path);
+    }
+    let done = 0;
+    const next = async () => {
+      while (missing.length) {
+        const path = missing.shift();
+        // Each file gets 90 seconds and one retry, so a stalled request cannot block the whole download.
+        let response = null;
+        for (let attempt = 0; attempt < 2 && !response?.ok; attempt++) {
+          try {
+            response = await fetch(path, { cache: "no-cache", signal: AbortSignal.timeout(90000) });
+          } catch {
+            response = null;
+          }
+        }
+        if (!response?.ok) throw new Error(`${path}: ${response ? response.status : "timeout"}`);
+        await cache.put(path, response);
+        done += 1;
+        renderOfflineState(false, Math.round((done / (done + missing.length)) * 100));
+      }
+    };
+    await Promise.all(Array.from({ length: 6 }, next));
+    try {
+      localStorage.setItem(OFFLINE_FLAG, manifest.version);
+    } catch {
+      /* storage blocked */
+    }
+    renderOfflineState(true);
+    if (!silent) toast(t.offlineDone);
+  } catch (err) {
+    console.error(err);
+    renderOfflineState(false);
+    if (!silent) toast(t.offlineFailed);
+  } finally {
+    offlineBusy = false;
+  }
+}
+
 window.addEventListener("online", async () => renderOfflineState(await isOfflineReady()));
 window.addEventListener("offline", async () => renderOfflineState(await isOfflineReady()));
 
@@ -805,17 +988,19 @@ async function registerServiceWorker() {
   return navigator.serviceWorker.register("/sw.js");
 }
 
-$("offline-btn").addEventListener("click", async () => {
-  const reg = await registerServiceWorker();
-  if (!reg) return toast(t.noOfflineSupport);
-  await navigator.serviceWorker.ready;
-  // SDK assets are cached as the viewer loads them; this adds the case files and the app shell.
-  const urls = ["/", ...Object.values(DOCUMENTS).map((d) => d.url)];
-  const cache = await caches.open("hearing-annotations-v2");
-  await cache.addAll(urls).catch(() => null);
-  renderOfflineState(true);
+$("offline-btn").addEventListener("click", () => prepareOffline());
+registerServiceWorker().then(async () => {
+  const ready = await isOfflineReady();
+  renderOfflineState(ready);
+  // A new version was deployed after the user prepared offline: refresh the cache in the background.
+  let flag = null;
+  try {
+    flag = localStorage.getItem(OFFLINE_FLAG);
+  } catch {
+    /* storage blocked */
+  }
+  if (!ready && flag && navigator.onLine) prepareOffline({ silent: true });
 });
-registerServiceWorker().then(async () => renderOfflineState(await isOfflineReady()));
 
 start().catch((err) => {
   console.error(err);

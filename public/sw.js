@@ -1,6 +1,8 @@
-// Offline support: every same-origin GET (app shell, SDK assets, WASM, case files) is cached.
-// Network first for the HTML page and case files; cache first for the SDK and app assets (versioned file names).
-const CACHE = "hearing-annotations-v2";
+// Offline support. The "Prepare offline" button stores every file listed in /offline-manifest.json
+// (app shell, SDK runtime, case files) in this cache. Afterwards:
+// - the page and the case files are network first, so a newer version replaces the cached one when online;
+// - everything else (versioned SDK and app files) is cache first.
+const CACHE = "hearing-annotations-v3";
 
 self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", (event) => {
@@ -12,45 +14,33 @@ self.addEventListener("activate", (event) => {
   );
 });
 
-self.addEventListener("message", (event) => {
-  if (event.data && event.data.type === "precache") {
-    event.waitUntil(caches.open(CACHE).then((c) => c.addAll(event.data.urls).catch(() => null)));
+const save = (key, res) => {
+  if (res.ok && res.status === 200) {
+    const copy = res.clone();
+    caches.open(CACHE).then((c) => c.put(key, copy));
   }
-});
+  return res;
+};
 
 self.addEventListener("fetch", (event) => {
   const { request } = event;
   const url = new URL(request.url);
   if (request.method !== "GET" || url.origin !== self.location.origin) return;
 
-  // Network first for the page and the case files, so a newer version replaces the cached one when online.
-  if (request.mode === "navigate" || url.pathname.startsWith("/samples/")) {
-    const cacheKey = request.mode === "navigate" ? "/" : request;
+  // The page is stored under "/" whatever its query string (?doc=, ?lang=) or hash.
+  if (request.mode === "navigate") {
+    event.respondWith(fetch(request).then((res) => save("/", res)).catch(() => caches.match("/")));
+    return;
+  }
+  if (url.pathname.startsWith("/samples/") || url.pathname === "/offline-manifest.json") {
     event.respondWith(
       fetch(request)
-        .then((res) => {
-          if (res.ok && res.status === 200) {
-            const copy = res.clone();
-            caches.open(CACHE).then((c) => c.put(cacheKey, copy));
-          }
-          return res;
-        })
-        .catch(() => caches.match(cacheKey))
+        .then((res) => save(url.pathname, res))
+        .catch(() => caches.match(url.pathname))
     );
     return;
   }
-
   event.respondWith(
-    caches.match(request).then(
-      (cached) =>
-        cached ||
-        fetch(request).then((res) => {
-          if (res.ok && res.status === 200) {
-            const copy = res.clone();
-            caches.open(CACHE).then((c) => c.put(request, copy));
-          }
-          return res;
-        })
-    )
+    caches.match(request, { ignoreSearch: true }).then((cached) => cached || fetch(request).then((res) => save(request, res)))
   );
 });
