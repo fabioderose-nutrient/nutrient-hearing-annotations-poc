@@ -1,6 +1,7 @@
 // Local persistence in IndexedDB: annotations per document (Instant JSON) and the personas/categories settings.
 // Everything stays in the browser, so it works offline.
-const DB_NAME = "hearing-annotations";
+// Versioned name: a database left stuck by an old tab (pending delete) cannot block the app.
+const DB_NAME = "hearing-annotations-v2";
 const STORE = "instant-json";
 import { lang } from "./i18n.js";
 
