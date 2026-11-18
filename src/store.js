@@ -5,7 +5,9 @@ const STORE = "instant-json";
 import { lang } from "./i18n.js";
 
 // Settings are kept per UI language so each language has its own personas and categories.
-const SETTINGS_KEY = `__settings__:${lang}`;
+const SETTINGS_KEY = `__settings__:v2:${lang}`;
+// Annotation keys carry the data model version too (v2: highlight color comes from the theme).
+const docKey = (docId) => `v2:${docId}`;
 
 let dbPromise = null;
 function openDb() {
@@ -28,8 +30,8 @@ async function tx(mode, fn) {
   });
 }
 
-export const loadInstantJson = (docId) => tx("readonly", (s) => s.get(docId)).then((r) => r ?? null);
-export const saveInstantJson = (docId, json) => tx("readwrite", (s) => s.put(json, docId));
+export const loadInstantJson = (docId) => tx("readonly", (s) => s.get(docKey(docId))).then((r) => r ?? null);
+export const saveInstantJson = (docId, json) => tx("readwrite", (s) => s.put(json, docKey(docId)));
 export const clearAll = () => tx("readwrite", (s) => s.clear());
 
 export const loadSettings = () => tx("readonly", (s) => s.get(SETTINGS_KEY)).then((r) => r ?? null);

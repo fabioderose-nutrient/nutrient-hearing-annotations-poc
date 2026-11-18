@@ -1,20 +1,20 @@
 # Hearing Annotations PoC
 
-Judges prepare PDF case files for court hearings with [Nutrient Web SDK](https://www.nutrient.io/sdk/web/). Each judge highlights and comments in their own color and sorts the notes into categories. They move through the file from a navigation tree, share a direct link to a note, choose what the courtroom sees when the file is projected, and keep working with no network.
+Judges prepare PDF case files for court hearings with [Nutrient Web SDK](https://www.nutrient.io/sdk/web/). They create their own themes (a person in the case, a type of information…), give each one a color, and highlight and comment in that theme's color. They move through the file from a navigation tree, share a direct link to a note, choose what the courtroom sees when the file is projected, and keep working with no network.
 
-![Navigation tree and inline editor](docs/screenshots/tree.jpg)
+![Themes, quick theme creation and navigation tree](docs/screenshots/tree.jpg)
 
 ## What it does
 
-- **Personas with their own color.** Pick who you are ("I am"), select text, and the highlight takes your color and name. Personas are created, renamed, recolored and deleted in the *Personas & categories* tab. Changing a color updates that persona's existing highlights.
-- **Categories.** Each new highlight goes into the selected category. Categories have their own color and are managed the same way.
-- **Navigation tree.** The right panel shows the annotations as a tree: category, then page, then annotation. You can also group by persona then category, or by page then category. Branches fold and unfold, and the tree can be searched. Click an annotation to jump to it in the document.
+- **Themes set the color.** Pick a theme, select text, and the highlight takes the theme's color. Themes are free: a person (defendant, victim, witness) or a type of information (contradictions, evidence, key dates…). "+ Theme" creates one with a name and a color in one step; the *Themes & personas* tab renames, recolors and deletes them. Changing a theme's color updates all its highlights, and moving a highlight to another theme gives it that theme's color.
+- **Personas record the author.** "I am" sets who wrote the annotation (name and initials in the tree). Personas do not set the color.
+- **Navigation tree.** The right panel shows the annotations as a tree: theme, then page, then annotation. You can also group by persona then theme, or by page then theme. Branches fold and unfold, and the tree can be searched. Click an annotation to jump to it in the document.
 - **Show or hide from the tree.** Every branch and every annotation has a checkbox. Unticking hides the highlights in the document. A branch with some items hidden shows a partial tick and a count such as `2/5`. "Show all" and "Hide all" act on everything.
 - **Inline editing.** Title, category and comment are edited under the selected annotation.
 - **Direct links.** "Copy link" copies a URL such as `/?doc=criminal-case-sample#a=seed-alibi` that opens the file on that annotation.
 - **Projection mode.** "Project" opens a dialog to choose what the courtroom sees: no annotations, only the ones ticked in the tree, or all of them. You also choose whether to show the comments and the toolbar. The panels are always hidden. "Change" adjusts the choice during the projection, and Esc or "Exit projection" comes back. The saved annotations are never changed.
 - **Resizable, responsive panel.** Drag the panel's left edge to resize it (double-click resets it), or hide it with the button at the top right. Below 1024 px wide (tablets), the panel becomes a drawer that slides over the document.
-- **Offline.** "Prepare offline" stores the app, the SDK and the case file in the browser with a service worker. Annotations, personas and categories are saved in IndexedDB. The file then opens and can be annotated with no network. Hover the button for one second to see the explanation.
+- **Offline.** "Prepare offline" stores the app, the SDK and the case file in the browser with a service worker. Annotations, themes and personas are saved in IndexedDB. The file then opens and can be annotated with no network. Hover the button for one second to see the explanation.
 - **Languages.** English by default, French available (`VITE_DEFAULT_LANG=fr`, or `?lang=fr` in the URL). Each language has its own demo data and sample file.
 
 ![Projection dialog](docs/screenshots/projection-dialog.jpg)
@@ -24,7 +24,7 @@ Judges prepare PDF case files for court hearings with [Nutrient Web SDK](https:/
 | Need | Implementation |
 | --- | --- |
 | Viewer and highlights | `NutrientViewer.load()` in standalone (WebAssembly) mode, `text-highlighter` tool and the text selection popup |
-| Persona color and name | `setAnnotationPresets()` and `setAnnotationCreatorName()` when the persona changes; `annotations.create` adds `customData` (`personaId`, `categoryId`, `label`) |
+| Theme color and author | `setAnnotationPresets()` with the current theme's color and `setAnnotationCreatorName()` with the current persona; `annotations.create` adds `customData` (`personaId`, `categoryId` = theme, `label`) |
 | Navigation tree | `getAnnotations()` on every page, grouped in two levels in the custom side panel; `jumpToRect()` and `setSelectedAnnotations()` on click |
 | Show or hide | Tree checkboxes set the annotation `noView` flag, saved with the annotations |
 | Comments | The annotation `note` property |
@@ -37,7 +37,7 @@ Code layout:
 
 - `src/main.js`: viewer, tree, projection, offline
 - `src/panel.js`: panel resize, show/hide and tablet drawer
-- `src/config.js`: default personas, categories, documents and demo annotations per language
+- `src/config.js`: default themes, personas, documents and demo annotations per language
 - `src/store.js`: IndexedDB persistence
 - `src/tooltip.js`: tooltips shown after a 1-second hover
 - `src/i18n.js`: UI strings (English and French)
@@ -71,7 +71,7 @@ Open http://localhost:4173. `npm install` copies the SDK runtime into `public/nu
 
 `npm run dev` also works for development, but offline mode needs the production build (`build` and `preview`), because the service worker is only registered there.
 
-To go back to the demo data, use "Reset demo" in the *Personas & categories* tab, or open `/?reset=1`.
+To go back to the demo data, use "Reset demo" in the *Themes & personas* tab, or open `/?reset=1`.
 
 ## Limits of the PoC
 

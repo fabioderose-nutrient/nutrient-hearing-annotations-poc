@@ -41,6 +41,7 @@ const toColor = (hex) => new NutrientViewer.Color(hexToRgb(hex));
 const persona = (id) => state.personas.find((p) => p.id === id);
 const category = (id) => state.categories.find((c) => c.id === id);
 const currentPersona = () => persona(state.personaId) || state.personas[0];
+const currentTheme = () => category(state.categoryId) || state.categories[0];
 const initials = (name) =>
   name
     .split(/\s+/)
@@ -92,7 +93,8 @@ function renderPickers() {
       (c) => `<button class="chip ${c.id === state.categoryId ? "active" : ""}" data-category="${c.id}" style="--c:${c.color}">
         <span class="cat-dot" style="background:${c.color}"></span>${escapeHtml(c.name)}</button>`
     )
-    .join("");
+    .join("") +
+    `<button class="chip chip-add" data-action="add-theme" data-tip="${escapeHtml(t.addThemeTip)}">${escapeHtml(t.addCategory)}</button>`;
 }
 
 $("persona-picker").addEventListener("click", (e) => {
@@ -101,14 +103,16 @@ $("persona-picker").addEventListener("click", (e) => {
   state.personaId = chip.dataset.persona;
   persistSettings();
   renderPickers();
-  applyPersonaToViewer();
+  applyDrawingStyle();
 });
 $("category-picker").addEventListener("click", (e) => {
+  if (e.target.closest("[data-action=add-theme]")) return openThemeForm();
   const chip = e.target.closest("[data-category]");
   if (!chip) return;
   state.categoryId = chip.dataset.category;
   persistSettings();
   renderPickers();
+  applyDrawingStyle();
 });
 
 function renderSettings() {
@@ -147,7 +151,7 @@ for (const listId of ["persona-list", "category-list"]) {
     await persistSettings();
     renderPickers();
     if (kind === "persona") await syncPersonaAnnotations(item);
-    else renderTree();
+    else await syncThemeAnnotations(item);
   });
   $(listId).addEventListener("click", async (e) => {
     if (!e.target.closest('[data-action="remove"]')) return;
@@ -162,21 +166,27 @@ for (const listId of ["persona-list", "category-list"]) {
     await persistSettings();
     renderSettings();
     renderPickers();
-    applyPersonaToViewer();
+    applyDrawingStyle();
     renderTree();
   });
 }
 
-const PALETTE = ["#F5C400", "#5CC98A", "#5B9BF0", "#F07AB4", "#FF922B", "#20C997", "#845EF7", "#FA5252", "#15AABF", "#94D82D"];
-const nextColor = (list) =>
-  PALETTE.find((c) => !list.some((x) => x.color.toLowerCase() === c.toLowerCase())) || PALETTE[list.length % PALETTE.length];
+// Light highlighter colors for themes, darker colors for persona avatars (white initials).
+const PALETTES = {
+  category: ["#FFD43B", "#74C0FC", "#8CE99A", "#FF8787", "#B197FC", "#FFA94D", "#63E6BE", "#F783AC", "#C0EB75", "#E599F7"],
+  persona: ["#364FC7", "#0B7285", "#862E9C", "#C2255C", "#2B8A3E", "#D9480F", "#5F3DC4", "#1864AB", "#A61E4D", "#495057"],
+};
+const nextColor = (kind, list) => {
+  const palette = PALETTES[kind];
+  return palette.find((c) => !list.some((x) => x.color.toLowerCase() === c.toLowerCase())) || palette[list.length % palette.length];
+};
 
 function addSettingsItem(kind) {
   const list = kind === "persona" ? state.personas : state.categories;
   const item = {
-    id: newId(kind === "persona" ? "p" : "c"),
+    id: newId(kind === "persona" ? "p" : "t"),
     name: kind === "persona" ? t.newPersona : t.newCategory,
-    color: nextColor(list),
+    color: nextColor(kind, list),
   };
   list.push(item);
   persistSettings();
@@ -187,6 +197,33 @@ function addSettingsItem(kind) {
   input?.select();
 }
 $("add-persona").addEventListener("click", () => addSettingsItem("persona"));
+
+// Quick theme creation from the composer: name + color, then it becomes the current theme.
+function openThemeForm() {
+  $("theme-form").classList.remove("hidden");
+  $("theme-name").value = "";
+  $("theme-color").value = nextColor("category", state.categories);
+  $("theme-swatch").style.background = $("theme-color").value;
+  $("theme-name").focus();
+}
+const closeThemeForm = () => $("theme-form").classList.add("hidden");
+$("theme-color").addEventListener("input", (e) => ($("theme-swatch").style.background = e.target.value));
+$("theme-cancel").addEventListener("click", closeThemeForm);
+$("theme-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const name = $("theme-name").value.trim();
+  if (!name) return $("theme-name").focus();
+  const item = { id: newId("t"), name, color: $("theme-color").value };
+  state.categories.push(item);
+  state.categoryId = item.id;
+  await persistSettings();
+  closeThemeForm();
+  renderSettings();
+  renderPickers();
+  applyDrawingStyle();
+  renderTree();
+  toast(t.themeCreated.replace("{name}", name));
+});
 $("add-category").addEventListener("click", () => addSettingsItem("category"));
 
 $("reset-demo").addEventListener("click", async () => {
@@ -247,7 +284,7 @@ async function start() {
   state.instance = instance;
   window.nutrientInstance = instance; // handy for debugging in the console
 
-  applyPersonaToViewer();
+  applyDrawingStyle();
   if (!stored) await seedAnnotations();
 
   instance.addEventListener("annotations.create", onAnnotationsCreated);
@@ -262,21 +299,22 @@ async function start() {
   window.addEventListener("hashchange", openFromHash);
 }
 
-// Highlights made with the toolbar or the text selection popup take the current persona's color.
-function applyPersonaToViewer() {
+// Highlights made with the toolbar or the text selection popup take the current theme's color.
+// The current persona is recorded as the author.
+function applyDrawingStyle() {
   const { instance } = state;
   if (!instance) return;
-  const p = currentPersona();
-  instance.setAnnotationCreatorName(p.name);
+  instance.setAnnotationCreatorName(currentPersona().name);
   instance.setAnnotationPresets((presets) => ({
     ...presets,
-    highlight: { ...(presets.highlight || {}), color: toColor(p.color) },
+    highlight: { ...(presets.highlight || {}), color: toColor(currentTheme().color) },
   }));
 }
 
 async function onAnnotationsCreated(created) {
   const { instance } = state;
   const p = currentPersona();
+  const theme = currentTheme();
   const updates = [];
   for (const annotation of created.toArray()) {
     if (!(annotation instanceof NutrientViewer.Annotations.HighlightAnnotation)) continue;
@@ -289,9 +327,9 @@ async function onAnnotationsCreated(created) {
     }
     updates.push(
       annotation
-        .set("color", toColor(p.color))
+        .set("color", toColor(theme.color))
         .set("creatorName", p.name)
-        .set("customData", { personaId: p.id, categoryId: state.categoryId, label: text.trim().slice(0, 80) })
+        .set("customData", { personaId: p.id, categoryId: theme.id, label: text.trim().slice(0, 80) })
     );
   }
   if (updates.length) {
@@ -318,7 +356,8 @@ async function seedAnnotations() {
   for (const seed of SEED_ANNOTATIONS) {
     const hit = (await instance.search(seed.text)).first();
     const p = persona(seed.persona);
-    if (!hit || !p) {
+    const theme = category(seed.theme);
+    if (!hit || !p || !theme) {
       console.warn("Seed skipped:", seed.text);
       continue;
     }
@@ -328,10 +367,10 @@ async function seedAnnotations() {
         pageIndex: hit.pageIndex,
         rects: hit.rectsOnPage,
         boundingBox: NutrientViewer.Geometry.Rect.union(hit.rectsOnPage),
-        color: toColor(p.color),
+        color: toColor(theme.color),
         creatorName: p.name,
         note: seed.note || null,
-        customData: { personaId: p.id, categoryId: seed.category, label: seed.label },
+        customData: { personaId: p.id, categoryId: theme.id, label: seed.label },
       })
     );
   }
@@ -345,12 +384,21 @@ async function getAllAnnotations() {
   return pages.flatMap((list) => list.toArray()).filter((a) => a instanceof NutrientViewer.Annotations.HighlightAnnotation);
 }
 
-// Renaming or recoloring a persona updates the highlights they already made.
+// Renaming a persona updates the author name of the highlights they already made.
 async function syncPersonaAnnotations(p) {
   if (!state.instance) return;
-  const mine = (await getAllAnnotations()).filter((a) => a.customData?.personaId === p.id);
-  if (mine.length) await state.instance.update(mine.map((a) => a.set("color", toColor(p.color)).set("creatorName", p.name)));
-  applyPersonaToViewer();
+  const mine = (await getAllAnnotations()).filter((a) => a.customData?.personaId === p.id && a.creatorName !== p.name);
+  if (mine.length) await state.instance.update(mine.map((a) => a.set("creatorName", p.name)));
+  applyDrawingStyle();
+  await refreshAnnotations();
+}
+
+// Recoloring a theme recolors every highlight in that theme.
+async function syncThemeAnnotations(theme) {
+  if (!state.instance) return;
+  const inTheme = (await getAllAnnotations()).filter((a) => a.customData?.categoryId === theme.id);
+  if (inTheme.length) await state.instance.update(inTheme.map((a) => a.set("color", toColor(theme.color))));
+  applyDrawingStyle();
   await refreshAnnotations();
 }
 
@@ -449,7 +497,7 @@ function leafHtml(a) {
         <div class="leaf-text">
           <div class="leaf-label">${escapeHtml(a.label)}</div>
           <div class="leaf-meta">
-            <span class="avatar xs" style="background:${a.color}">${escapeHtml(initials(authorName))}</span>${escapeHtml(authorName)}
+            <span class="avatar xs" style="background:${p ? p.color : "#868e96"}">${escapeHtml(initials(authorName))}</span>${escapeHtml(authorName)}
             <span>· ${t.page} ${a.pageIndex + 1}</span>
             ${c && state.groupBy !== "category" ? `<span class="tag" style="--c:${c.color}">${escapeHtml(c.name)}</span>` : ""}
             ${a.note ? `<span class="note-flag" data-tip="${escapeHtml(a.note)}">💬</span>` : ""}
@@ -559,8 +607,13 @@ $("tree").addEventListener("change", (e) => {
   const value = e.target.value;
   patchAnnotation(id, (a) => {
     if (field === "note") return a.set("note", value || null);
-    const key = field === "category" ? "categoryId" : "label";
-    return a.set("customData", { ...(a.customData || {}), [key]: value || null });
+    if (field === "category") {
+      // Moving a highlight to another theme also gives it that theme's color.
+      const theme = category(value);
+      const moved = a.set("customData", { ...(a.customData || {}), categoryId: value || null });
+      return theme ? moved.set("color", toColor(theme.color)) : moved;
+    }
+    return a.set("customData", { ...(a.customData || {}), label: value || null });
   });
 });
 

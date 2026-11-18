@@ -38,12 +38,20 @@
 
         <section class="composer">
           <div class="composer-row">
-            <div class="composer-label" data-i18n="iAm"></div>
-            <div id="persona-picker" class="picker"></div>
-          </div>
-          <div class="composer-row">
             <div class="composer-label" data-i18n="newHighlightsIn"></div>
             <div id="category-picker" class="picker"></div>
+            <form id="theme-form" class="theme-form hidden" autocomplete="off">
+              <label class="color-swatch" id="theme-swatch">
+                <input type="color" id="theme-color" aria-label="color" />
+              </label>
+              <input id="theme-name" class="input" type="text" data-i18n-placeholder="themeNamePlaceholder" />
+              <button class="btn btn-small btn-primary" type="submit" data-i18n="create"></button>
+              <button class="btn btn-small" type="button" id="theme-cancel" data-i18n="cancel"></button>
+            </form>
+          </div>
+          <div class="composer-row">
+            <div class="composer-label" data-i18n="iAm"></div>
+            <div id="persona-picker" class="picker"></div>
           </div>
           <p class="hint" data-i18n="howToHighlight"></p>
         </section>
@@ -77,19 +85,19 @@
         <section id="tab-settings" class="tab-panel hidden">
           <div class="settings-block">
             <div class="settings-head">
-              <h3 data-i18n="personas"></h3>
-              <button id="add-persona" class="btn btn-small" data-i18n="addPersona"></button>
-            </div>
-            <p class="hint" data-i18n="personasHint"></p>
-            <ul id="persona-list" class="settings-list"></ul>
-          </div>
-          <div class="settings-block">
-            <div class="settings-head">
               <h3 data-i18n="categories"></h3>
               <button id="add-category" class="btn btn-small" data-i18n="addCategory"></button>
             </div>
             <p class="hint" data-i18n="categoriesHint"></p>
             <ul id="category-list" class="settings-list"></ul>
+          </div>
+          <div class="settings-block">
+            <div class="settings-head">
+              <h3 data-i18n="personas"></h3>
+              <button id="add-persona" class="btn btn-small" data-i18n="addPersona"></button>
+            </div>
+            <p class="hint" data-i18n="personasHint"></p>
+            <ul id="persona-list" class="settings-list"></ul>
           </div>
           <div class="settings-block">
             <button id="reset-demo" class="btn btn-small btn-danger-ghost" data-i18n="resetDemo"></button>
